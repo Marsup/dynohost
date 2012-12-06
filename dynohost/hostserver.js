@@ -2,7 +2,6 @@ var async = require('async');
 var DynoStateMachine = require('./dynocontroller');
 var EventEmitter = require('events').EventEmitter;
 var request = require('request');
-var async = require('async');
 var conf = require('./conf');
 var apiBaseUrl = require('url').format(conf.apiserver) + '/';
 
@@ -55,13 +54,13 @@ function DynoHostServer() {
 
 
   var updateState = function(payload, cb) {
-    console.log(payload.dynoId + 
+    console.log(payload.dynoId +
                 ' - Update api server with state: ' + payload.state);
     var requestInfo = {
       method: 'POST',
       url: apiBaseUrl + 'internal/updatestate',
       headers: {
-        'Authorization': ' Basic ' + 
+        'Authorization': ' Basic ' +
           new Buffer(':' + conf.apiserver.key).toString('base64')
       },
       json: true,
@@ -88,11 +87,41 @@ function DynoHostServer() {
           state: state,
           appId: job.app_id,
           port: dyno.port
+        }, function() {
+          var instanceId = job.instance_id;
+
+          if (state === 'errored' && job.template === 'dyno' && instanceId) {
+            var restartDelay = 10000; // Never go under 1000, the dyno might not be stopped
+            console.log('Restarting instance %s in %d seconds', instanceId, restartDelay/1000);
+
+            // Provision a new job to restart the instance on error
+            // There might be a concurrency issue if you manage to create a new release
+            // in between the crash and the command to restart it.
+            // You would probably end up with a dead restarted instance.
+            setTimeout(function() {
+              var requestInfo = {
+                method: 'POST',
+                url: apiBaseUrl + 'internal/restartCrashedInstance',
+                headers: {
+                  'Authorization': ' Basic ' +
+                    new Buffer(':' + conf.apiserver.key).toString('base64')
+                },
+                json: true,
+                body: { instanceId: instanceId }
+              };
+
+              request(requestInfo, function(err, resp, body) {
+                if (err) {
+                  console.error('Unable to restart instance %s', instanceId);
+                }
+              });
+            }, restartDelay);
+          }
         });
       });
       dyno.start();
       return dyno;
-    } 
+    }
 
     if(job.next_action === 'kill') {
       dyno = dynos[job.dyno_id];

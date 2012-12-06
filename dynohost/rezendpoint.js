@@ -24,7 +24,7 @@ function RezServer(dynoFetcher, options) {
          //    s.destroySoon();
          //    return;
          // }
-        
+
         var dyno = getDyno(dynoId);
         if(!dyno) {
           s.write('Dyno does not exist.');
